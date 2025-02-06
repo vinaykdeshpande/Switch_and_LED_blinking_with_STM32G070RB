@@ -1,0 +1,138 @@
+/*
+ * Project: Switch and LED Blinking with STM32G070RB
+ * Description: This program controls the blinking of an LED based on the frequency set by 
+ *              pressing a tactile switch. Each button press changes the LED's blinking speed:
+ *              
+ *              - 1st Press: LED blinks at 0.5 Hz (1 sec ON, 1 sec OFF)
+ *              - 2nd Press: LED blinks at 1 Hz (0.5 sec ON, 0.5 sec OFF)
+ *              - 3rd Press: LED blinks at 2 Hz (0.25 sec ON, 0.25 sec OFF)
+ *              - 4th Press: LED turns OFF
+ *              - 5th press: Works as same 1st press
+ * Author: Vinay Kumar K Deshpande
+ * Date: 06/02/2025
+ *
+ * Hardware: STM32G070RB  Nucleo Board
+ * 
+ * Connections:
+ *  - LED: PA5
+ *  - Tactile Switch: PA0 (configured with pull-up resistor and falling edge interrupt)
+ *
+ */
+
+
+
+#include "main.h"
+
+/*Define variables */
+volatile uint8_t pressCount = 0;  // Track button presses
+uint32_t previousMillis = 0;
+uint32_t blinkInterval = 0;
+uint8_t ledState = 0;
+
+/* Funtion prototype */
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+void Error_Handler(void);
+
+/* Start of main function */
+int main(void) {
+    HAL_Init();               
+    SystemClock_Config();    
+    MX_GPIO_Init();         
+
+    while (1) {
+
+        switch (pressCount) {
+            case 1:
+                blinkInterval = 1000;  // 0.5 Hz (1 sec ON, 1 sec OFF)
+                break;
+            case 2:
+                blinkInterval = 500;   // 1 Hz (0.5 sec ON, 0.5 sec OFF)
+                break;
+            case 3:
+                blinkInterval = 250;   // 2 Hz (0.25 sec ON, 0.25 sec OFF)
+                break;
+            case 4:
+                HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET); // Turn off LED
+                continue;
+            default:
+                continue;
+        }
+        /* Blink LED at the selected intervals */
+        if (HAL_GetTick() - previousMillis >= blinkInterval) {
+            previousMillis = HAL_GetTick();
+            ledState = !ledState;
+            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, ledState ? GPIO_PIN_SET : GPIO_PIN_RESET);
+        }
+    }
+}
+
+/* External Interrupt Callback Button Press Handler */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+    static uint32_t lastInterruptTime = 0;
+    uint32_t interruptTime = HAL_GetTick();
+    if (GPIO_Pin == GPIO_PIN_0) {  // Check if the button caused the interrupt
+        /* Debounce: Ignore button presses within 200 ms To keep Debounce */
+        if (interruptTime - lastInterruptTime > 200) {
+            pressCount++;
+            if (pressCount > 4) {
+                pressCount = 1;  // Reset after 4 presses
+            }
+        }
+        lastInterruptTime = interruptTime;
+    }
+}
+
+/* GPIO Initialization Function */
+static void MX_GPIO_Init(void) {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+
+    /* Configure LED pin (PA5) as output */
+    GPIO_InitStruct.Pin = GPIO_PIN_5;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+	
+    /* Configure Button pin (PA0) as input with Pull-Up */
+    GPIO_InitStruct.Pin = GPIO_PIN_0;
+    GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;  // Interrupt on falling edge
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+	
+    /* Enable Interrupt */
+    HAL_NVIC_SetPriority(EXTI0_1_IRQn, 2, 0);
+    HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
+}
+
+/* System Clock Configuration */
+void SystemClock_Config(void) {
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+    // Initializes the RCC Oscillators according to the specified parameters
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+    RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+    RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+    RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL12;
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+        Error_Handler();
+    }
+	
+    RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK |
+                                  RCC_CLOCKTYPE_PCLK1;
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK) {
+        Error_Handler();
+    }
+}
+
+/* Error Handler */
+void Error_Handler(void) {
+    while (1) {
+    }
+}
